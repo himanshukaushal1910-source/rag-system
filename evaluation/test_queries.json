@@ -1,0 +1,122 @@
+[
+  {
+    "id": "q01",
+    "question": "What is the grievance reference number mentioned in the document?",
+    "ground_truth": "The grievance reference number is 40014326008025.",
+    "category": "factual"
+  },
+  {
+    "id": "q02",
+    "question": "What is the status of the grievance as of April 2026?",
+    "ground_truth": "The status of the grievance is pending (लंबित) as of April 09, 2026.",
+    "category": "factual"
+  },
+  {
+    "id": "q03",
+    "question": "What type of content does the document contain?",
+    "ground_truth": "The document contains text blocks describing grievance status, a forwarding details table, and applicant information.",
+    "category": "descriptive"
+  },
+  {
+    "id": "q04",
+    "question": "What are the column headers in the forwarding details table?",
+    "ground_truth": "The forwarding details table contains columns for reference type, ordering officer, forwarding date, due date, and authority.",
+    "category": "table"
+  },
+  {
+    "id": "q05",
+    "question": "What is the date mentioned in the grievance status document?",
+    "ground_truth": "The date mentioned in the document is April 09, 2026.",
+    "category": "factual"
+  },
+  {
+    "id": "q06",
+    "question": "Summarise what the document is about.",
+    "ground_truth": "The document is a grievance tracking record from the Samadhan portal showing the status of a specific grievance with reference number 40014326008025, which was pending as of April 2026.",
+    "category": "summary"
+  },
+  {
+    "id": "q07",
+    "question": "What portal is this grievance document from?",
+    "ground_truth": "The grievance document is from the Samadhan portal.",
+    "category": "factual"
+  },
+  {
+    "id": "q08",
+    "question": "Is the grievance resolved or pending?",
+    "ground_truth": "The grievance is pending (लंबित), not resolved.",
+    "category": "factual"
+  },
+  {
+    "id": "q09",
+    "question": "What information is shown about the applicant?",
+    "ground_truth": "The document shows applicant information including their details associated with the grievance reference number 40014326008025.",
+    "category": "descriptive"
+  },
+  {
+    "id": "q10",
+    "question": "How many pages does the document have?",
+    "ground_truth": "The document has 1 page.",
+    "category": "factual"
+  },
+  {
+    "id": "q11",
+    "question": "What language is the grievance document written in?",
+    "ground_truth": "The grievance document is written primarily in Hindi (Devanagari script).",
+    "category": "descriptive"
+  },
+  {
+    "id": "q12",
+    "question": "What does the forwarding details section show?",
+    "ground_truth": "The forwarding details section shows a table with information about how the grievance was forwarded through different authorities, including dates and officer details.",
+    "category": "table"
+  },
+  {
+    "id": "q13",
+    "question": "What is the reference number format used in the document?",
+    "ground_truth": "The reference number format is a numeric string: 40014326008025.",
+    "category": "factual"
+  },
+  {
+    "id": "q14",
+    "question": "What kind of document is this?",
+    "ground_truth": "This is a government grievance tracking document from the Samadhan portal showing the current status of a filed grievance.",
+    "category": "descriptive"
+  },
+  {
+    "id": "q15",
+    "question": "What is the meaning of लंबित in the context of this document?",
+    "ground_truth": "लंबित means pending in Hindi, indicating that the grievance has not yet been resolved.",
+    "category": "factual"
+  },
+  {
+    "id": "q16",
+    "question": "Does the document mention any due dates?",
+    "ground_truth": "Yes, the forwarding details table includes a due date column (नियत दिनांक) showing scheduled resolution dates.",
+    "category": "table"
+  },
+  {
+    "id": "q17",
+    "question": "What is the purpose of the Samadhan portal?",
+    "ground_truth": "Based on the document, the Samadhan portal is used for filing and tracking government grievances.",
+    "category": "descriptive"
+  },
+  {
+    "id": "q18",
+    "question": "What ordering officer information is available in the document?",
+    "ground_truth": "The document contains an ordering officer (आदेश देने वाले अधिकारी) column in the forwarding details table.",
+    "category": "table"
+  },
+  {
+    "id": "q19",
+    "question": "What is the forwarding date mentioned in the document?",
+    "ground_truth": "The forwarding date (अग्रसारित दिनांक) is listed in the forwarding details table of the document.",
+    "category": "factual"
+  },
+  {
+    "id": "q20",
+    "question": "What reference type is mentioned in the grievance document?",
+    "ground_truth": "The reference type (सन्दर्भ का प्रकार) is listed as a column in the forwarding details table of the grievance document.",
+    "category": "table"
+  }
+]
