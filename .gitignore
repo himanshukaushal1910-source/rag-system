@@ -1,7 +1,6 @@
-# Environment & secrets
+﻿# Environment & secrets — only ignore real .env files
 .env
 *.env
-.env.*
 
 # Python
 __pycache__/
