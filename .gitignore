@@ -1,0 +1,38 @@
+﻿# Environment & secrets
+.env
+*.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Qdrant local storage
+qdrant_storage/
+
+# Model cache
+.cache/
+huggingface/
+
+# Test PDFs
+*.pdf
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
