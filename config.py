@@ -60,6 +60,18 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
 
     # ------------------------------------------------------------------ #
+    # Rate Limiting
+    # ------------------------------------------------------------------ #
+    rate_limit_enabled: bool = Field(default=True)
+    rate_limit_requests: int = Field(default=60)
+    rate_limit_window_seconds: int = Field(default=60)
+
+    # ------------------------------------------------------------------ #
+    # Streaming
+    # ------------------------------------------------------------------ #
+    streaming_enabled: bool = Field(default=True)
+
+    # ------------------------------------------------------------------ #
     # Retrieval & Re-ranking
     # ------------------------------------------------------------------ #
     reranker_model: str = Field(

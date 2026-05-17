@@ -6,12 +6,12 @@ from typing import AsyncIterator
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from agent.nodes.retriever import init_retrieval_components
 from api.exceptions import RagException
-from api.middleware import APIKeyMiddleware, RequestIDMiddleware
+from api.middleware import APIKeyMiddleware, RateLimitMiddleware, RequestIDMiddleware
 from api.routes.ingest import router as ingest_router
+from api.routes.metrics import router as metrics_router
 from api.routes.query import router as query_router
 from config import get_settings
 from ingestion.embedder import AsyncEmbedder
@@ -24,68 +24,60 @@ logger: structlog.BoundLogger = structlog.get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """FastAPI lifespan: initialise heavy resources once at startup.
-
-    Startup:
-    - Connect to Qdrant and ensure collection exists.
-    - Load cross-encoder model into memory.
-    - Initialise embedder and sparse encoder.
-    - Inject components into retriever node.
-
-    Shutdown:
-    - Close Qdrant connection pool.
-    """
+    """FastAPI lifespan: initialise all heavy resources once at startup."""
     settings = get_settings()
     log = logger.bind(collection=settings.qdrant_collection_name)
-
     log.info("Starting up RAG system")
 
-    # Qdrant
     await ensure_collection_exists()
     log.info("Qdrant ready")
 
-    # Retrieval components — load once, reuse across requests
     embedder = AsyncEmbedder()
     sparse_encoder = SparseEncoder()
     reranker = CrossEncoderReranker()
 
-    # Inject into retriever node so it doesn't re-initialise per request
     init_retrieval_components(embedder, sparse_encoder, reranker)
 
     app.state.embedder = embedder
     app.state.sparse_encoder = sparse_encoder
     app.state.reranker = reranker
 
-    log.info("All components initialised — server ready")
+    log.info(
+        "All components initialised — server ready",
+        rate_limit_enabled=settings.rate_limit_enabled,
+        rate_limit=f"{settings.rate_limit_requests}/{settings.rate_limit_window_seconds}s",
+        streaming_enabled=settings.streaming_enabled,
+        reranker_device=reranker._device,
+    )
 
     yield
 
-    # Shutdown
     log.info("Shutting down")
     await QdrantClientSingleton.close()
     log.info("Qdrant connection closed")
 
 
 def create_app() -> FastAPI:
-    """Create and configure the FastAPI application.
-
-    Returns:
-        Configured :class:`FastAPI` instance.
-    """
+    """Create and configure the FastAPI application."""
     settings = get_settings()
 
     app = FastAPI(
         title="Multimodal PDF RAG System",
-        description="Agentic RAG over 1000+ PDFs with hybrid search and hallucination guards",
-        version="0.1.0",
+        description=(
+            "Production-grade Agentic RAG over 1000+ PDFs. "
+            "Hybrid search · Cross-encoder reranking · Hallucination guards · Streaming"
+        ),
+        version="0.2.0",
         lifespan=lifespan,
         docs_url="/docs",
         redoc_url="/redoc",
     )
 
     # ------------------------------------------------------------------ #
-    # Middleware (order matters — added in reverse execution order)
+    # Middleware — order matters (added in reverse execution order)
+    # RateLimitMiddleware runs after APIKeyMiddleware sets request.state.api_key
     # ------------------------------------------------------------------ #
+    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(APIKeyMiddleware)
     app.add_middleware(RequestIDMiddleware)
 
@@ -94,9 +86,10 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ #
     app.include_router(query_router)
     app.include_router(ingest_router)
+    app.include_router(metrics_router)
 
     # ------------------------------------------------------------------ #
-    # Global exception handler
+    # Global exception handlers
     # ------------------------------------------------------------------ #
     @app.exception_handler(RagException)
     async def rag_exception_handler(request: Request, exc: RagException) -> JSONResponse:
@@ -114,11 +107,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)
-        logger.error(
-            "Unhandled exception",
-            error=str(exc),
-            request_id=request_id,
-        )
+        logger.error("Unhandled exception", error=str(exc), request_id=request_id)
         return JSONResponse(
             status_code=500,
             content={
