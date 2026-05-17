@@ -39,9 +39,11 @@ class CrossEncoderReranker:
         self._top_k_final = settings.top_k_final
         self._log = logger.bind(model=self._model_name)
 
-        self._log.info("Loading cross-encoder model")
+        import torch
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._log.info("Loading cross-encoder model", device=self._device)
         try:
-            self._model = CrossEncoder(self._model_name)
+            self._model = CrossEncoder(self._model_name, device=self._device)
         except Exception as exc:
             raise RerankerError(
                 f"Failed to load cross-encoder: {self._model_name}",
