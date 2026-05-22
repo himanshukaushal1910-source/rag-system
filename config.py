@@ -183,6 +183,49 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── RAG Fusion ────────────────────────────────────────────────────────────
+    rag_fusion_enabled: bool = Field(
+        default=True,
+        description="Generate N paraphrase variants of query → retrieve → client-side RRF merge.",
+    )
+    rag_fusion_num_queries: int = Field(
+        default=3,
+        description="Number of paraphrase variants to generate for RAG Fusion.",
+    )
+
+    # ── Step-Back Prompting ───────────────────────────────────────────────────
+    step_back_enabled: bool = Field(
+        default=True,
+        description="Generate an abstract step-back query alongside the specific query for broader retrieval.",
+    )
+
+    # ── Sentence Window Retrieval ─────────────────────────────────────────────
+    sentence_window_enabled: bool = Field(
+        default=True,
+        description="Expand each retrieved chunk to include neighboring chunks for richer context.",
+    )
+    sentence_window_size: int = Field(
+        default=2,
+        description="Number of neighboring chunks to include on each side of a retrieved chunk.",
+    )
+
+    # ── Contextual Compression ────────────────────────────────────────────────
+    contextual_compression_enabled: bool = Field(
+        default=False,
+        description="Use gpt-4o-mini to extract only query-relevant sentences from each chunk. "
+                    "Adds ~0.3-0.5s per query but reduces context noise.",
+    )
+    contextual_compression_model: str = Field(
+        default="gpt-4o-mini",
+        description="Model used for contextual compression.",
+    )
+
+    # ── Query Routing ─────────────────────────────────────────────────────────
+    query_routing_enabled: bool = Field(
+        default=True,
+        description="Classify query type (factual/analytical/visual/table/code) and route accordingly.",
+    )
+
     # ── App mode ──────────────────────────────────────────────────────────────
     debug: bool = Field(
         default=False,

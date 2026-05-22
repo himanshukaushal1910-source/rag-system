@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from openai import AsyncOpenAI
 
 from agent.nodes.generator import set_openai_client
-from agent.nodes.retriever import init_retrieval_components
+from agent.nodes.retriever import init_retrieval_components, set_retrieval_openai_client
 from api.exceptions import RagException
 from api.middleware import APIKeyMiddleware, RateLimitMiddleware, RequestIDMiddleware
 from api.routes.auth import router as auth_router
@@ -48,6 +48,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
     set_openai_client(openai_client)
+    set_retrieval_openai_client(openai_client)
     app.state.openai_client = openai_client
 
     # Cache UI HTML at startup — avoids blocking open() on every request (H-6)

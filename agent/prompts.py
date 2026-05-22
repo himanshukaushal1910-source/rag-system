@@ -215,3 +215,38 @@ faithfulness_prompt = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(FAITHFULNESS_SYSTEM),
     HumanMessagePromptTemplate.from_template(FAITHFULNESS_HUMAN),
 ])
+
+# --------------------------------------------------------------------------- #
+# Query Routing / Classification
+# --------------------------------------------------------------------------- #
+
+QUERY_ROUTING_SYSTEM = """You are a query classifier for a PDF document retrieval system.
+Classify the query into exactly ONE of these types:
+
+- factual: Asks for a specific fact, number, name, date, or definition
+  Examples: "What accuracy did GPT-4 achieve?", "When was BERT published?"
+
+- analytical: Asks for explanation, reasoning, or analysis
+  Examples: "Explain how attention works", "Why does dropout prevent overfitting?"
+
+- comparative: Asks to compare or contrast multiple things
+  Examples: "Compare BERT and GPT", "What are the differences between..."
+
+- visual: Asks about a figure, chart, graph, plot, diagram, or image
+  Examples: "Describe Figure 3", "What does the loss curve show?"
+
+- table: Asks about data in a table, or tabular comparison
+  Examples: "What are the results in Table 2?", "Show me the benchmark results"
+
+- code: Asks about code, algorithm, implementation, or pseudocode
+  Examples: "Show the training loop", "What is the algorithm for..."
+
+Respond with ONLY the type word (one of: factual, analytical, comparative, visual, table, code).
+No explanation."""
+
+QUERY_ROUTING_HUMAN = "Query: {query}"
+
+query_routing_prompt = ChatPromptTemplate.from_messages([
+    SystemMessagePromptTemplate.from_template(QUERY_ROUTING_SYSTEM),
+    HumanMessagePromptTemplate.from_template(QUERY_ROUTING_HUMAN),
+])

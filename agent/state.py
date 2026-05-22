@@ -74,3 +74,7 @@ class AgentState(TypedDict, total=False):
     final_answer: str
     error: str | None
     retry_count: int
+    # Advanced retrieval metadata
+    query_type: str          # factual | analytical | comparative | visual | table | code
+    step_back_query: str     # abstract step-back version of query (may be empty)
+    fusion_queries: list[str]  # paraphrase variants used in RAG Fusion

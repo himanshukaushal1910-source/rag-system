@@ -6,6 +6,15 @@
   <title>RAG</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&display=swap" rel="stylesheet" />
+  <!-- KaTeX for math rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" crossorigin="anonymous"
+    onload="renderMathInPage()"></script>
+  <!-- Prism.js for syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
   <style>
     /* ── Tokens ── */
     :root {
@@ -359,6 +368,132 @@
     .char-counter.warn { color: var(--yellow); }
     .hint-row { display: flex; align-items: center; justify-content: space-between; margin-top: 7px; }
 
+    /* ── Inline numbered citations ── */
+    .cite-ref {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 18px; height: 18px; padding: 0 5px;
+      font-size: 10.5px; font-weight: 700; border-radius: 4px;
+      background: var(--bg3); border: 1px solid var(--border2);
+      color: var(--text2); cursor: pointer; vertical-align: super;
+      line-height: 1; margin: 0 1px; text-decoration: none;
+      transition: all var(--trans); font-family: inherit;
+    }
+    .cite-ref:hover { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+    /* ── References section ── */
+    .references-section {
+      margin-top: 16px; padding: 12px 14px;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 8px; font-size: 12.5px;
+    }
+    .references-section h4 {
+      font-size: 11px; font-weight: 600; color: var(--text3);
+      letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px;
+    }
+    .ref-item { display: flex; gap: 8px; margin-bottom: 5px; color: var(--text2); line-height: 1.5; }
+    .ref-num { font-weight: 700; color: var(--text); min-width: 22px; }
+    .ref-link { cursor: pointer; color: var(--text2); text-decoration: underline; text-underline-offset: 2px; }
+    .ref-link:hover { color: var(--text); }
+
+    /* ── Query type badge ── */
+    .query-type-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10.5px; font-weight: 600; padding: 2px 8px;
+      border-radius: 99px; letter-spacing: 0.05em; text-transform: uppercase;
+      background: var(--bg3); border: 1px solid var(--border2); color: var(--text3);
+    }
+    .query-type-badge.factual { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+    .query-type-badge.analytical { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+    .query-type-badge.comparative { background: #fdf4ff; border-color: #e9d5ff; color: #7e22ce; }
+    .query-type-badge.visual { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+    .query-type-badge.table { background: #fefce8; border-color: #fef08a; color: #854d0e; }
+    .query-type-badge.code { background: #f1f5f9; border-color: #cbd5e1; color: #334155; }
+    [data-theme="dark"] .query-type-badge.factual { background: #052e16; border-color: #166534; color: #4ade80; }
+    [data-theme="dark"] .query-type-badge.analytical { background: #1e3a5f; border-color: #1d4ed8; color: #93c5fd; }
+    [data-theme="dark"] .query-type-badge.comparative { background: #2e1065; border-color: #6b21a8; color: #d8b4fe; }
+    [data-theme="dark"] .query-type-badge.visual { background: #431407; border-color: #c2410c; color: #fdba74; }
+    [data-theme="dark"] .query-type-badge.table { background: #3d2a00; border-color: #a16207; color: #fde047; }
+    [data-theme="dark"] .query-type-badge.code { background: #1e293b; border-color: #475569; color: #94a3b8; }
+
+    /* ── Code blocks (Prism overrides) ── */
+    .bubble pre[class*="language-"], .bubble code[class*="language-"] {
+      font-size: 12.5px; border-radius: 8px; margin: 10px 0;
+    }
+    .bubble pre { overflow-x: auto; }
+    .bubble :not(pre) > code {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 4px; padding: 1px 6px;
+      font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace;
+      color: var(--text);
+    }
+
+    /* ── Math (KaTeX) ── */
+    .bubble .katex { font-size: 1.05em; }
+    .bubble .katex-display { margin: 12px 0; overflow-x: auto; }
+
+    /* ── Interactive tables ── */
+    .bubble table {
+      border-collapse: collapse; width: 100%;
+      margin: 12px 0; font-size: 12.5px;
+      overflow-x: auto; display: block;
+    }
+    .bubble th, .bubble td {
+      border: 1px solid var(--border); padding: 7px 11px; text-align: left;
+    }
+    .bubble th {
+      background: var(--bg2); font-weight: 600; font-size: 12px;
+      color: var(--text2); cursor: pointer; user-select: none;
+      white-space: nowrap;
+    }
+    .bubble th:hover { background: var(--bg3); color: var(--text); }
+    .bubble th.sort-asc::after { content: ' ↑'; font-size: 10px; }
+    .bubble th.sort-desc::after { content: ' ↓'; font-size: 10px; }
+    .bubble tr:nth-child(even) td { background: var(--bg2); }
+    .bubble tr:hover td { background: var(--bg3); }
+
+    /* ── Headings inside bubbles ── */
+    .bubble h1, .bubble h2, .bubble h3 {
+      font-weight: 600; color: var(--text); margin: 14px 0 6px;
+    }
+    .bubble h1 { font-size: 1.1rem; }
+    .bubble h2 { font-size: 1rem; }
+    .bubble h3 { font-size: 0.9rem; color: var(--text2); }
+    .bubble ul, .bubble ol { padding-left: 20px; margin: 8px 0; }
+    .bubble li { margin-bottom: 3px; line-height: 1.7; }
+    .bubble blockquote {
+      border-left: 3px solid var(--border2); padding-left: 12px;
+      margin: 8px 0; color: var(--text2); font-style: italic;
+    }
+    .bubble hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+    .bubble strong { font-weight: 600; color: var(--text); }
+    .bubble em { font-style: italic; }
+
+    /* ── Source preview panel ── */
+    .source-preview {
+      position: fixed; right: 24px; top: 80px;
+      width: 340px; max-height: 60vh; overflow-y: auto;
+      background: var(--bg); border: 1px solid var(--border2);
+      border-radius: 12px; padding: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.12);
+      z-index: 5000; display: none;
+    }
+    .source-preview.show { display: block; }
+    .source-preview-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px; font-size: 12px; font-weight: 600;
+      color: var(--text2); text-transform: uppercase; letter-spacing: 0.07em;
+    }
+    .source-preview-close {
+      background: none; border: none; font-size: 16px; cursor: pointer;
+      color: var(--text3); line-height: 1; padding: 2px 4px; border-radius: 4px;
+    }
+    .source-preview-close:hover { background: var(--bg3); color: var(--text); }
+    .source-preview-meta { font-size: 11.5px; color: var(--text3); margin-bottom: 8px; }
+    .source-preview-text {
+      font-size: 13px; color: var(--text2); line-height: 1.7;
+      white-space: pre-wrap; word-break: break-word;
+    }
+
     /* ── Logout button ── */
     .logout-btn {
       font-size: 12.5px; font-weight: 600; padding: 6px 14px;
@@ -480,6 +615,16 @@
     </div>
   </div>
 
+</div>
+
+<!-- Source preview panel — shows chunk text on citation click -->
+<div class="source-preview" id="sourcePreview">
+  <div class="source-preview-header">
+    <span id="sourcePreviewTitle">Source</span>
+    <button class="source-preview-close" onclick="closeSourcePreview()">&#x2715;</button>
+  </div>
+  <div class="source-preview-meta" id="sourcePreviewMeta"></div>
+  <div class="source-preview-text" id="sourcePreviewText"></div>
 </div>
 
 <!-- Login modal — shown when session cookie is absent or expired -->
@@ -855,7 +1000,7 @@
               bubbleEl._rawText = (bubbleEl._rawText || '') + data.text;
               fullAnswer = bubbleEl._rawText;
               const cleaned = bubbleEl._rawText.replace(/\[Doc:[^\]]*\]/g, '').replace(/\[Doc:[^\]]*$/g, '');
-              bubbleEl.innerHTML = renderMarkdown(cleaned);
+              bubbleEl.innerHTML = renderMarkdown(cleaned, null);
               scrollBottom();
             } else if (eventType === 'citations') {
               citationsData = data || [];
@@ -892,82 +1037,263 @@
     }
   }
 
-  /* ── Render markdown (tables + basic formatting) ── */
-  function renderMarkdown(text) {
-    // Remove citation tags first
-    let t = text.replace(/\[Doc:[^\]]*\]/g, '').replace(/\[Doc:[^\]]*$/g, '').trim();
+  /* ── Active citations map: citation number → {filename, page, text} ── */
+  let _activeCitations = [];
 
-    // Tables: detect markdown table blocks
-    t = t.replace(/(\|.+\|\n\|[-| :]+\|\n(?:\|.+\|\n?)*)/g, (match) => {
-      const rows = match.trim().split('\n').filter(r => r.trim());
-      if (rows.length < 2) return escHtml(match);
-      let html = '<table>';
-      rows.forEach((row, i) => {
-        // Skip separator row
-        if (/^\|[\s\-:|]+\|$/.test(row)) return;
-        const cells = row.split('|').filter((_, ci, arr) => ci > 0 && ci < arr.length - 1);
-        const tag = i === 0 ? 'th' : 'td';
-        html += '<tr>' + cells.map(c => `<${tag}>${escHtml(c.trim())}</${tag}>`).join('') + '</tr>';
-      });
-      html += '</table>';
-      return html;
+  /* ── Render markdown with math, code, tables, headings, citations ── */
+  function renderMarkdown(text, citations) {
+    // citations: optional array of {filename, page, chunk_id}
+    // text: the answer text from the model
+
+    let t = text;
+
+    // 1. Protect fenced code blocks from further processing
+    const codeBlocks = [];
+    t = t.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+      const idx = codeBlocks.length;
+      codeBlocks.push({ lang: lang || 'text', code });
+      return `\x00CODE${idx}\x00`;
     });
 
-    // Bold **text**
-    t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // 2. Protect inline code
+    const inlineCodes = [];
+    t = t.replace(/`([^`\n]+)`/g, (_, code) => {
+      const idx = inlineCodes.length;
+      inlineCodes.push(code);
+      return `\x00ICODE${idx}\x00`;
+    });
 
-    // Paragraphs and line breaks
-    t = t.replace(/\n\n/g, '</p><p style="margin-top:10px">').replace(/\n/g, '<br>');
+    // 3. Protect display math $$...$$
+    const dispMath = [];
+    t = t.replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => {
+      const idx = dispMath.length;
+      dispMath.push(m);
+      return `\x00DMATH${idx}\x00`;
+    });
+
+    // 4. Protect inline math $...$
+    const inlineMath = [];
+    t = t.replace(/\$([^\$\n]+)\$/g, (_, m) => {
+      const idx = inlineMath.length;
+      inlineMath.push(m);
+      return `\x00IMATH${idx}\x00`;
+    });
+
+    // 5. Convert numbered citations [N] to interactive badges
+    if (citations && citations.length) {
+      t = t.replace(/\[(\d+)\]/g, (match, num) => {
+        const idx = parseInt(num) - 1;
+        if (idx >= 0 && idx < citations.length) {
+          const c = citations[idx];
+          return `<button class="cite-ref" onclick="showSourcePreview(${idx})" title="${escHtml(c.filename)} p.${c.page}">[${num}]</button>`;
+        }
+        return match;
+      });
+    } else {
+      // Keep [Doc: ...] format cleaned up (legacy)
+      t = t.replace(/\[Doc:[^\]]*\]/g, '');
+    }
+
+    // 6. Headings
+    t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    t = t.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    t = t.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+    // 7. HR
+    t = t.replace(/^---+$/gm, '<hr>');
+
+    // 8. Bold and italic
+    t = t.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    t = t.replace(/\*([^\*\n]+)\*/g, '<em>$1</em>');
+
+    // 9. Markdown tables
+    t = t.replace(/((?:\|[^\n]+\|\n)+)/g, (match) => {
+      const rows = match.trim().split('\n').filter(r => r.trim());
+      if (rows.length < 2) return match;
+      const sepIdx = rows.findIndex(r => /^\|[\s\-:|]+\|$/.test(r));
+      if (sepIdx < 0) return match;
+      const headers = rows[0];
+      const dataRows = rows.filter((_, i) => i !== 0 && i !== sepIdx);
+      const parseRow = (row, tag) => {
+        const cells = row.split('|').filter((_, ci, arr) => ci > 0 && ci < arr.length - 1);
+        return '<tr>' + cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>';
+      };
+      let tableHtml = '<table><thead>' + parseRow(headers, 'th') + '</thead><tbody>';
+      tableHtml += dataRows.map(r => parseRow(r, 'td')).join('');
+      tableHtml += '</tbody></table>';
+      return tableHtml;
+    });
+
+    // 10. Blockquote
+    t = t.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
+
+    // 11. Ordered lists
+    t = t.replace(/((?:^\d+\. .+\n?)+)/gm, (match) => {
+      const items = match.trim().split('\n').filter(Boolean);
+      return '<ol>' + items.map(i => `<li>${i.replace(/^\d+\. /, '')}</li>`).join('') + '</ol>';
+    });
+
+    // 12. Unordered lists
+    t = t.replace(/((?:^[-*] .+\n?)+)/gm, (match) => {
+      const items = match.trim().split('\n').filter(Boolean);
+      return '<ul>' + items.map(i => `<li>${i.replace(/^[-*] /, '')}</li>`).join('') + '</ul>';
+    });
+
+    // 13. Paragraphs
+    t = t.split(/\n\n+/).map(p => {
+      const trimmed = p.trim();
+      if (!trimmed) return '';
+      if (/^<(h[1-6]|ul|ol|table|blockquote|hr|pre)/.test(trimmed)) return trimmed;
+      return `<p>${trimmed.replace(/\n/g, '<br>')}</p>`;
+    }).join('\n');
+
+    // 14. Restore display math
+    dispMath.forEach((m, idx) => {
+      let rendered = `<div class="katex-display">$$${escHtml(m)}$$</div>`;
+      try {
+        if (window.katex) rendered = '<div class="katex-display">' + window.katex.renderToString(m, { displayMode: true, throwOnError: false }) + '</div>';
+      } catch(e) {}
+      t = t.replace(`\x00DMATH${idx}\x00`, rendered);
+    });
+
+    // 15. Restore inline math
+    inlineMath.forEach((m, idx) => {
+      let rendered = `$${escHtml(m)}$`;
+      try {
+        if (window.katex) rendered = window.katex.renderToString(m, { displayMode: false, throwOnError: false });
+      } catch(e) {}
+      t = t.replace(`\x00IMATH${idx}\x00`, rendered);
+    });
+
+    // 16. Restore fenced code blocks with Prism highlighting
+    codeBlocks.forEach(({ lang, code }, idx) => {
+      const safeCode = escHtml(code);
+      const cls = lang && lang !== 'text' ? ` class="language-${lang}"` : '';
+      t = t.replace(`\x00CODE${idx}\x00`, `<pre><code${cls}>${safeCode}</code></pre>`);
+    });
+
+    // 17. Restore inline code
+    inlineCodes.forEach((code, idx) => {
+      t = t.replace(`\x00ICODE${idx}\x00`, `<code>${escHtml(code)}</code>`);
+    });
 
     return t;
   }
 
-  /* ── Finish streaming: add actions ── */
-  function finishStreamMsg(msgEl, citations, scores, answer, query, images, tables) {
-    const body = msgEl.querySelector('.msg-body');
-    const faithScore = scores.faithfulness_score || 0;
+  /* ── Source preview panel ── */
+  function showSourcePreview(citationIdx) {
+    const c = _activeCitations[citationIdx];
+    if (!c) return;
+    document.getElementById('sourcePreviewTitle').textContent = `Source [${citationIdx + 1}]`;
+    document.getElementById('sourcePreviewMeta').textContent = `${c.filename}  ·  Page ${c.page}`;
+    document.getElementById('sourcePreviewText').textContent = c.chunkText || '(chunk text not available)';
+    document.getElementById('sourcePreview').classList.add('show');
+  }
+  function closeSourcePreview() {
+    document.getElementById('sourcePreview').classList.remove('show');
+  }
 
-    // Render any tables from API response (in addition to inline markdown tables)
-    if (tables && tables.length) {
-      tables.forEach(tbl => {
-        const tblWrap = document.createElement('div');
-        tblWrap.style.cssText = 'margin:10px 0;overflow-x:auto;';
-        tblWrap.innerHTML = renderMarkdown(tbl.markdown);
-        if (tbl.caption) {
-          const cap = document.createElement('div');
-          cap.style.cssText = 'font-size:11.5px;color:var(--text3);margin-top:4px;';
-          cap.textContent = tbl.caption;
-          tblWrap.appendChild(cap);
-        }
-        body.appendChild(tblWrap);
+  /* ── Make table columns sortable ── */
+  function makeSortable(table) {
+    const ths = table.querySelectorAll('th');
+    ths.forEach((th, col) => {
+      th.addEventListener('click', () => {
+        const asc = !th.classList.contains('sort-asc');
+        ths.forEach(t => { t.classList.remove('sort-asc', 'sort-desc'); });
+        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+          const aText = (a.cells[col]?.textContent || '').trim();
+          const bText = (b.cells[col]?.textContent || '').trim();
+          const aNum = parseFloat(aText);
+          const bNum = parseFloat(bText);
+          if (!isNaN(aNum) && !isNaN(bNum)) return asc ? aNum - bNum : bNum - aNum;
+          return asc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+        });
+        rows.forEach(r => tbody.appendChild(r));
+      });
+    });
+  }
+
+  /* ── Trigger Prism highlight + table sort on new content ── */
+  function enhanceContent(el) {
+    if (window.Prism) Prism.highlightAllUnder(el);
+    el.querySelectorAll('table').forEach(makeSortable);
+  }
+
+  /* ── KaTeX page-wide trigger (called by onload) ── */
+  function renderMathInPage() {
+    if (window.renderMathInElement) {
+      renderMathInElement(document.body, {
+        delimiters: [
+          { left: '$$', right: '$$', display: true },
+          { left: '$', right: '$', display: false },
+        ],
+        throwOnError: false,
       });
     }
+  }
 
-    // Render images inline
+  /* ── Build references section HTML ── */
+  function buildReferencesHtml(citations) {
+    if (!citations || !citations.length) return '';
+    let html = '<div class="references-section"><h4>References</h4>';
+    citations.forEach((c, i) => {
+      html += `<div class="ref-item"><span class="ref-num">[${i + 1}]</span><span class="ref-link" onclick="showSourcePreview(${i})">${escHtml(c.filename)}, p.${c.page}</span></div>`;
+    });
+    html += '</div>';
+    return html;
+  }
+
+  /* ── Build query type badge ── */
+  function buildQueryTypeBadge(queryType) {
+    if (!queryType) return '';
+    const labels = { factual: '⊙ Factual', analytical: '⟳ Analytical', comparative: '⇄ Comparative', visual: '◎ Visual', table: '⊞ Table', code: '</> Code' };
+    const label = labels[queryType] || queryType;
+    return `<span class="query-type-badge ${queryType}">${label}</span>`;
+  }
+
+  /* ── Finish streaming: render citations, images, tables, badges ── */
+  function finishStreamMsg(msgEl, citations, scores, answer, query, images, tables) {
+    const body = msgEl.querySelector('.msg-body');
+    const bubble = msgEl.querySelector('.bubble');
+    const faithScore = scores.faithfulness_score || 0;
+    const queryType = scores.query_type || 'analytical';
+
+    // Store active citations for source preview
+    _activeCitations = (citations || []).map(c => ({
+      filename: c.filename,
+      page: c.page,
+      chunkText: c.chunk_text || '',
+    }));
+
+    // Re-render bubble with citations now available (adds interactive [N] badges)
+    if (bubble && bubble._rawText) {
+      const cleaned = bubble._rawText.replace(/\[Doc:[^\]]*\]/g, '').replace(/\[Doc:[^\]]*$/g, '');
+      bubble.innerHTML = renderMarkdown(cleaned, _activeCitations);
+      bubble.innerHTML += buildReferencesHtml(_activeCitations);
+      enhanceContent(bubble);
+    }
+
+    // Render images
     if (images && images.length) {
       const imgWrap = document.createElement('div');
       imgWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;margin:10px 0;';
       images.forEach(img => {
         if (!img.image_b64) return;
         const fig = document.createElement('figure');
-        fig.style.cssText = 'margin:0;max-width:280px;';
+        fig.style.cssText = 'margin:0;max-width:300px;';
         const image = document.createElement('img');
         image.src = 'data:image/png;base64,' + img.image_b64;
-        image.style.cssText = 'max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:zoom-in;';
+        image.style.cssText = 'max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:zoom-in;display:block;';
         image.title = 'Click to expand';
-        image.onclick = () => {
-          const overlay = document.createElement('div');
-          overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
-          const bigImg = document.createElement('img');
-          bigImg.src = image.src;
-          bigImg.style.cssText = 'max-width:90vw;max-height:90vh;border-radius:8px;';
-          overlay.appendChild(bigImg);
-          overlay.onclick = () => overlay.remove();
-          document.body.appendChild(overlay);
-        };
+        image.onclick = () => _zoomImage(image.src);
         const caption = document.createElement('figcaption');
-        caption.style.cssText = 'font-size:11.5px;color:var(--text3);margin-top:4px;text-align:center;';
-        caption.textContent = img.caption || (img.filename + ' p.' + img.page);
+        caption.style.cssText = 'font-size:11px;color:var(--text3);margin-top:4px;text-align:center;line-height:1.4;';
+        caption.textContent = img.caption || (img.filename + ' · p.' + img.page);
         fig.appendChild(image);
         fig.appendChild(caption);
         imgWrap.appendChild(fig);
@@ -977,7 +1303,24 @@
 
     const metaRow = document.createElement('div');
     metaRow.className = 'meta-row';
+    metaRow.style.cssText = 'align-items:center;gap:8px;flex-wrap:wrap;';
+    body.appendChild(metaRow);
 
+    // Query type badge
+    const badgeWrap = document.createElement('span');
+    badgeWrap.innerHTML = buildQueryTypeBadge(queryType);
+    metaRow.appendChild(badgeWrap);
+
+    // Faithfulness score
+    const scorePill = document.createElement('span');
+    scorePill.className = 'score-pill';
+    const pct = Math.round(faithScore * 100);
+    const scoreColor = pct >= 80 ? 'var(--green)' : pct >= 60 ? 'var(--yellow)' : 'var(--red)';
+    scorePill.innerHTML = `<span style="color:${scoreColor}">✦ ${pct}%</span>`;
+    scorePill.title = 'Faithfulness score';
+    metaRow.appendChild(scorePill);
+
+    // Sources button
     if (citations && citations.length) {
       const srcBtn = document.createElement('button');
       srcBtn.className = 'source-btn';
@@ -990,18 +1333,9 @@
         srcBtn.innerHTML = open ? '&#x2197; Sources &#x25B2;' : '&#x2197; Sources';
       };
       metaRow.appendChild(srcBtn);
-      body.appendChild(metaRow);
       body.appendChild(panel);
-    } else {
-      body.appendChild(metaRow);
     }
 
-    const scorePill = document.createElement('span');
-    scorePill.className = 'score-pill';
-    scorePill.textContent = '✦ ' + Math.round(faithScore * 100) + '%';
-    metaRow.appendChild(scorePill);
-
-    // Action buttons
     body.appendChild(buildActionRow(answer, query));
   }
 
@@ -1104,8 +1438,27 @@
     return panel;
   }
 
-  /* ── Append assistant msg with sources + actions ── */
+  /* ── Image zoom overlay ── */
+  function _zoomImage(src) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+    const bigImg = document.createElement('img');
+    bigImg.src = src;
+    bigImg.style.cssText = 'max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,0.5);';
+    overlay.appendChild(bigImg);
+    overlay.onclick = () => overlay.remove();
+    document.body.appendChild(overlay);
+  }
+
+  /* ── Append assistant msg with rich rendering ── */
   function appendAssistantMsg(answer, citations, faithScore, consistent, subQueries, query) {
+    // Store citations for source preview
+    _activeCitations = (citations || []).map(c => ({
+      filename: c.filename,
+      page: c.page,
+      chunkText: c.chunk_text || '',
+    }));
+
     const msgs = document.getElementById('messages');
     const el = document.createElement('div');
     el.className = 'msg assistant';
@@ -1119,11 +1472,22 @@
 
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
-    bubble.innerHTML = renderMarkdown(answer);
+    const cleaned = answer.replace(/\[Doc:[^\]]*\]/g, '').trim();
+    bubble.innerHTML = renderMarkdown(cleaned, _activeCitations);
+    bubble.innerHTML += buildReferencesHtml(_activeCitations);
     body.appendChild(bubble);
+
+    enhanceContent(bubble);
 
     const metaRow = document.createElement('div');
     metaRow.className = 'meta-row';
+
+    const scorePill = document.createElement('span');
+    scorePill.className = 'score-pill';
+    const pct = Math.round(faithScore * 100);
+    const col = pct >= 80 ? 'var(--green)' : pct >= 60 ? 'var(--yellow)' : 'var(--red)';
+    scorePill.innerHTML = `<span style="color:${col}">✦ ${pct}%</span>`;
+    metaRow.appendChild(scorePill);
 
     if (citations && citations.length) {
       const srcBtn = document.createElement('button');
@@ -1142,11 +1506,6 @@
     } else {
       body.appendChild(metaRow);
     }
-
-    const scorePill = document.createElement('span');
-    scorePill.className = 'score-pill';
-    scorePill.textContent = '✦ ' + Math.round(faithScore * 100) + '%';
-    metaRow.appendChild(scorePill);
 
     body.appendChild(buildActionRow(answer, query));
 

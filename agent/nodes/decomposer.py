@@ -27,7 +27,7 @@ import re
 import structlog
 from langchain_openai import ChatOpenAI
 
-from agent.prompts import decomposer_prompt, query_rewriter_prompt
+from agent.prompts import decomposer_prompt, query_rewriter_prompt, query_routing_prompt
 from agent.state import AgentState, ChatMessage
 from config import get_settings
 
@@ -150,6 +150,26 @@ Rewrite this as a self-contained question:"""
     return query
 
 
+_VALID_QUERY_TYPES = {"factual", "analytical", "comparative", "visual", "table", "code"}
+
+
+async def _classify_query_type(query: str, llm: ChatOpenAI) -> str:
+    """Route query to a type for downstream retrieval optimisation."""
+    if not get_settings().query_routing_enabled:
+        return "analytical"
+    try:
+        chain = query_routing_prompt | llm
+        response = await chain.ainvoke({"query": _sanitise_user_input(query)})
+        raw = response.content.strip().lower()
+        # Accept partial matches too (e.g. "factual." or "  table  ")
+        for t in _VALID_QUERY_TYPES:
+            if t in raw:
+                return t
+    except Exception as exc:
+        logger.warning("decomposer.routing_failed", error=str(exc))
+    return "analytical"
+
+
 async def _rewrite_query(query: str, llm: ChatOpenAI) -> str:
     """B2: Rewrite ambiguous query for clarity (no history needed)."""
     try:
@@ -180,6 +200,10 @@ async def decomposer_node(state: AgentState) -> AgentState:
     log.info("decomposer_node.start", history_turns=len(chat_history))
 
     llm = _get_llm()
+
+    # ── Query type classification (runs in parallel with history rewrite) ──
+    query_type = await _classify_query_type(query, llm)
+    log.info("decomposer_node.query_type", query_type=query_type)
 
     # ── CHAT-1: resolve context from history if needed ────────────────────
     rewritten = query
@@ -221,6 +245,7 @@ async def decomposer_node(state: AgentState) -> AgentState:
             **state,
             "sub_queries": sub_queries,
             "rewritten_query": rewritten,
+            "query_type": query_type,
         }
 
     except Exception as exc:
@@ -229,4 +254,5 @@ async def decomposer_node(state: AgentState) -> AgentState:
             **state,
             "sub_queries": [rewritten],
             "rewritten_query": rewritten,
+            "query_type": query_type,
         }

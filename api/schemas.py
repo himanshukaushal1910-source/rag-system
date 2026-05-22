@@ -113,6 +113,7 @@ class QueryResponse(BaseModel):
     tables: list[TableResponse] = Field(default_factory=list)
     images: list[ImageResponse] = Field(default_factory=list)
     completeness_score: float = Field(default=1.0)
+    query_type: str = Field(default="analytical", description="Detected query type for routing.")
 
 
 class IngestJobResponse(BaseModel):

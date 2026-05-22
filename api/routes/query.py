@@ -152,6 +152,7 @@ def _build_query_response(
         images=images,
         tables=tables,
         completeness_score=float(result.get("completeness_score", 1.0)),
+        query_type=result.get("query_type", "analytical"),
     )
 
 
@@ -286,6 +287,7 @@ async def query_stream(request: Request, body: QueryRequest) -> StreamingRespons
                 "completeness_score": float(result.get("completeness_score", 1.0)),
                 "sub_queries": result.get("sub_queries", [body.query]),
                 "rewritten_query": result.get("rewritten_query", body.query),
+                "query_type": result.get("query_type", "analytical"),
                 "request_id": request_id,
             })
 
