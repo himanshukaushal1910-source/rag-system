@@ -303,13 +303,37 @@ async def retriever_node(state: AgentState) -> AgentState:
         top_k=final_top_k,
     )
 
-    # ── MMR diversification ───────────────────────────────────────────────────
+    # ── MMR diversification — reuses stored Qdrant vectors (no API call) ────
     if settings.mmr_enabled and len(reranked) > 1:
         try:
-            chunk_texts = [c.text[:500] for c in reranked]
-            chunk_embeddings = await embedder.embed(chunk_texts)
-
             from retrieval.mmr import mmr_select
+
+            # Fetch stored dense vectors by ID — one local Qdrant round-trip
+            # instead of an OpenAI embedding API call.
+            chunk_ids = [c.id for c in reranked]
+            records = await client.retrieve(
+                collection_name=settings.qdrant_collection_name,
+                ids=chunk_ids,
+                with_vectors=["dense"],
+            )
+            vec_by_id: dict[str, list[float]] = {
+                str(r.id): r.vector["dense"]  # type: ignore[index]
+                for r in records
+                if r.vector and isinstance(r.vector, dict) and "dense" in r.vector
+            }
+            chunk_embeddings: list[list[float]] = [
+                vec_by_id.get(str(c.id), []) for c in reranked
+            ]
+
+            # Fallback: re-embed any chunk whose vector wasn't returned
+            missing_idx = [i for i, e in enumerate(chunk_embeddings) if not e]
+            if missing_idx:
+                fallback_vecs = await embedder.embed(
+                    [reranked[i].text[:500] for i in missing_idx]
+                )
+                for i, vec in zip(missing_idx, fallback_vecs):
+                    chunk_embeddings[i] = vec
+
             reranked = mmr_select(
                 chunks=reranked,
                 embeddings=chunk_embeddings,
