@@ -1,9 +1,22 @@
+"""
+agent/nodes/generator.py
+
+Multimodal generation node — GPT-4o with on-demand page rendering.
+
+New in this version:
+  - On-demand page rendering: when query asks about figures/charts/graphs,
+    renders the relevant PDF pages as high-res images and passes them to
+    GPT-4o vision. Works for ALL figure types including vector graphics.
+  - Extracts image chunks and table chunks from reranked_chunks
+  - Stores them in state as retrieved_images and retrieved_tables
+"""
+
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import structlog
-from langchain_openai import ChatOpenAI
 
 from agent.state import AgentState, Citation
 from api.exceptions import GenerationError, PromptBuildError
@@ -12,173 +25,285 @@ from retrieval.hybrid_retriever import RetrievedChunk
 
 logger: structlog.BoundLogger = structlog.get_logger(__name__)
 
-# Regex to extract citations from generated text.
-# Matches: [Doc: filename.pdf, Page: 3]
-_CITATION_RE = re.compile(
-    r"\[Doc:\s*(?P<filename>[^,\]]+),\s*Page:\s*(?P<page>\d+)\]"
-)
+_openai_client: Any | None = None
 
 
-def _build_context_messages(chunks: list[RetrievedChunk]) -> list[dict]:
-    """Build the context portion of the GPT-4o message payload.
+def set_openai_client(client: Any) -> None:
+    """Inject AsyncOpenAI client at lifespan startup."""
+    global _openai_client
+    _openai_client = client
 
-    Text chunks are passed as text blocks. Image/chart chunks include the
-    base64 image inline so GPT-4o vision can process them.
+
+def _get_openai_client() -> Any:
+    if _openai_client is None:
+        raise GenerationError(
+            "OpenAI client not initialised — call set_openai_client() at lifespan startup.",
+            detail="_openai_client is None",
+        )
+    return _openai_client
+
+
+def _build_system_prompt(sections: list[str]) -> str:
+    section_list = (
+        ", ".join(f'"{s}"' for s in sections) if sections else "multiple sections"
+    )
+    return f"""You are a precise research assistant. You are given context chunks and page images from one or more PDF documents and must answer the user's question.
+
+CRITICAL RULES:
+1. Use ALL provided context chunks AND page images. Do not stop after the first relevant chunk.
+2. The context spans these sections: {section_list}. Cover ALL of them when the question asks about multiple sections.
+3. Every factual claim must be followed by its citation in the format [Doc: filename.pdf, Page: N].
+4. For table data, reproduce exact numbers — do not paraphrase figures. Format tables as markdown tables.
+5. For figures and charts: describe what you SEE in the provided page images — colors, trends, axes, values, patterns.
+6. NEVER say "I cannot find" or "not mentioned in the context" if the information appears in ANY chunk or page image.
+7. If information truly does not appear in any chunk or image, say: "The provided context does not contain information about [topic]."
+8. For long-form questions, structure your answer with clear headings matching the sections in the context.
+9. Do not hallucinate citations. Only cite filenames and page numbers from the provided context."""
+
+
+def _build_messages(
+    query: str,
+    chunks: list[RetrievedChunk],
+    page_images: list[dict],
+) -> list[dict]:
+    """Build GPT-4o message list with text chunks, tables, and page images.
 
     Args:
-        chunks: Re-ranked chunks to include as context.
+        query:       User query string.
+        chunks:      Reranked RetrievedChunk objects.
+        page_images: List of rendered page image dicts from page_renderer.
 
     Returns:
-        List of OpenAI message content dicts (text + image_url blocks).
+        OpenAI chat message list.
     """
-    parts: list[dict] = []
+    sections: list[str] = list(
+        dict.fromkeys(c.section_heading for c in chunks if c.section_heading)
+    )
+    system_prompt = _build_system_prompt(sections)
+    context_parts: list[Any] = []
 
-    for i, chunk in enumerate(chunks, 1):
-        header = (
-            f"[Chunk {i} | {chunk.filename} | Page {chunk.page_number} "
-            f"| Type: {chunk.content_type}]\n"
+    # ── Text and table chunks ─────────────────────────────────────────────
+    for i, chunk in enumerate(chunks):
+        citation_tag = f"[Doc: {chunk.filename}, Page: {chunk.page_number}]"
+        heading_prefix = (
+            f"[Section: {chunk.section_heading}]\n" if chunk.section_heading else ""
         )
 
-        if chunk.content_type in ("image", "chart") and chunk.image_b64:
-            # Text header for the image
-            parts.append({"type": "text", "text": header})
-            # Base64 image for GPT-4o vision
-            parts.append({
+        if chunk.content_type == "table":
+            block_text = (
+                f"{heading_prefix}"
+                f"<table id='{i + 1}' citation='{citation_tag}'>\n"
+                f"{chunk.text}\n"
+                f"</table>"
+            )
+            context_parts.append({"type": "text", "text": block_text})
+
+        elif chunk.content_type in ("image", "chart") and chunk.image_b64:
+            # Embedded raster image (rare in academic PDFs)
+            context_parts.append({
+                "type": "text",
+                "text": (
+                    f"{heading_prefix}[Embedded Image {i + 1}] {citation_tag}\n"
+                    f"{chunk.text}"
+                ),
+            })
+            context_parts.append({
                 "type": "image_url",
                 "image_url": {
-                    "url": f"data:image/jpeg;base64,{chunk.image_b64}",
-                    "detail": "auto",
+                    "url": f"data:image/png;base64,{chunk.image_b64}",
+                    "detail": "low",
                 },
             })
+
         else:
-            parts.append({
+            block_text = (
+                f"{heading_prefix}"
+                f"[Chunk {i + 1}] {citation_tag}\n"
+                f"{chunk.text}"
+            )
+            context_parts.append({"type": "text", "text": block_text})
+
+    # ── Rendered page images (vector figures, charts, diagrams) ───────────
+    if page_images:
+        context_parts.append({
+            "type": "text",
+            "text": "\n\n--- RENDERED PAGE IMAGES (contains figures/charts) ---",
+        })
+        for img in page_images:
+            context_parts.append({
                 "type": "text",
-                "text": f"{header}{chunk.text}\n",
+                "text": (
+                    f"[Page Render: {img['filename']}, Page {img['page']}]\n"
+                    f"Context: {img.get('caption', '')}"
+                ),
+            })
+            context_parts.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{img['image_b64']}",
+                    "detail": "high",  # high detail for figures
+                },
             })
 
-    return parts
+    # ── Question ──────────────────────────────────────────────────────────
+    context_parts.append({
+        "type": "text",
+        "text": (
+            f"\n\n---\n"
+            f"QUESTION: {query}\n\n"
+            f"Answer using ALL context chunks and page images above. "
+            f"For figures and charts, describe what you see in the images. "
+            f"Cite every factual claim as [Doc: filename.pdf, Page: N]. "
+            f"Format any tabular data as markdown tables."
+        ),
+    })
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": context_parts},
+    ]
 
 
 def _extract_citations(
     answer: str,
     chunks: list[RetrievedChunk],
 ) -> list[Citation]:
-    """Extract and verify citations from a generated answer.
-
-    Parses ``[Doc: filename.pdf, Page: N]`` patterns and cross-references
-    them against the provided chunks. Unverified citations are still
-    included but can be flagged by the verifier node.
-
-    Args:
-        answer: Generated answer text.
-        chunks: Re-ranked chunks used for generation.
-
-    Returns:
-        List of :class:`Citation` dicts.
-    """
-    chunk_index: dict[tuple[str, int], str] = {
-        (c.filename, c.page_number): c.chunk_id for c in chunks
-    }
+    """Extract and validate citations from generated answer."""
+    pattern = re.compile(r"\[Doc:\s*(.+?),\s*Page:\s*(\d+)\]")
+    chunk_lookup: dict[tuple[str, int], RetrievedChunk] = {}
+    for chunk in chunks:
+        chunk_lookup[(chunk.filename, chunk.page_number)] = chunk
 
     citations: list[Citation] = []
     seen: set[tuple[str, int]] = set()
 
-    for match in _CITATION_RE.finditer(answer):
-        filename = match.group("filename").strip()
-        page = int(match.group("page"))
+    for match in pattern.finditer(answer):
+        filename = match.group(1).strip()
+        page = int(match.group(2))
         key = (filename, page)
-
         if key in seen:
             continue
         seen.add(key)
-
-        chunk_id = chunk_index.get(key, "unknown")
-        citations.append(Citation(filename=filename, page=page, chunk_id=chunk_id))
-
+        chunk = chunk_lookup.get(key)
+        citations.append(
+            Citation(
+                filename=filename,
+                page=page,
+                chunk_id=chunk.id if chunk else "unknown",
+            )
+        )
     return citations
 
 
-async def generator_node(state: AgentState) -> AgentState:
-    """Generate a grounded, cited answer from re-ranked chunks.
+def _extract_tables_from_answer(answer: str) -> list[dict]:
+    """Extract markdown tables from generated answer."""
+    tables = []
+    lines = answer.split("\n")
+    current_table: list[str] = []
 
-    Builds a multimodal GPT-4o prompt combining text and image chunks,
-    enforces strict citation rules, then extracts structured citations
-    from the response.
+    for line in lines:
+        if line.strip().startswith("|"):
+            current_table.append(line)
+        else:
+            if len(current_table) >= 2:
+                tables.append({
+                    "markdown": "\n".join(current_table),
+                    "caption": "",
+                })
+            current_table = []
+
+    if len(current_table) >= 2:
+        tables.append({
+            "markdown": "\n".join(current_table),
+            "caption": "",
+        })
+
+    return tables
+
+
+async def generator_node(state: AgentState) -> AgentState:
+    """Generate a grounded answer with on-demand figure rendering.
+
+    Pipeline:
+    1. Get reranked chunks from state
+    2. Check if query asks about figures/charts
+    3. If yes: render relevant PDF pages as high-res images
+    4. Build GPT-4o message with chunks + rendered pages
+    5. GPT-4o vision reads both text and images
+    6. Extract citations, images, tables from response
 
     Args:
-        state: Current agent state. Reads ``reranked_chunks`` and
-            ``original_query``.
+        state: Current agent state with reranked_chunks and original_query.
 
     Returns:
-        Updated state with ``generated_answer`` and ``citations``.
-
-    Raises:
-        GenerationError: If the OpenAI API call fails.
-        PromptBuildError: If context message construction fails.
+        Updated state with generated_answer, citations,
+        retrieved_images, and retrieved_tables.
     """
     settings = get_settings()
-    chunks = state.get("reranked_chunks") or state.get("retrieved_chunks") or []
+    chunks: list[RetrievedChunk] = (
+        state.get("reranked_chunks") or state.get("retrieved_chunks") or []
+    )
     query = state["original_query"]
     log = logger.bind(node="generator", chunks=len(chunks), query=query[:80])
 
     if not chunks:
-        log.warning("No chunks available for generation")
+        log.warning("generator_node.no_chunks")
         return {
             **state,
-            "generated_answer": "I cannot find sufficient information in the provided documents to answer this question.",
+            "generated_answer": (
+                "I cannot find sufficient information in the provided documents "
+                "to answer this question."
+            ),
             "citations": [],
+            "retrieved_images": [],
+            "retrieved_tables": [],
         }
 
-    log.info("Generating answer")
-
-    # ------------------------------------------------------------------ #
-    # Build multimodal context message content
-    # ------------------------------------------------------------------ #
+    # ── On-demand page rendering for figure queries ───────────────────────
+    page_images: list[dict] = []
     try:
-        context_parts = _build_context_messages(chunks)
+        from retrieval.page_renderer import get_figure_pages
+        page_images = get_figure_pages(
+            query=query,
+            chunks=chunks,
+            max_pages=3,  # render up to 3 pages per query
+        )
+        if page_images:
+            log.info(
+                "generator_node.pages_rendered",
+                count=len(page_images),
+                pages=[(p["filename"], p["page"]) for p in page_images],
+            )
+    except Exception as exc:
+        log.warning("generator_node.page_render_failed", error=str(exc))
+
+    # ── Build messages ────────────────────────────────────────────────────
+    log.info("generator_node.building_messages", page_images=len(page_images))
+
+    try:
+        messages = _build_messages(query, chunks, page_images)
     except Exception as exc:
         raise PromptBuildError(
-            "Failed to build context message",
+            "Failed to build context messages for generator",
             detail=str(exc),
         ) from exc
 
-    # Build the full message list for GPT-4o
-    from agent.prompts import GENERATOR_SYSTEM
-
-    # Context as a plain text string for text-only fallback
-    context_text = "\n\n".join(
-        f"[{c.filename} | Page {c.page_number}]\n{c.text}" for c in chunks
-        if c.content_type not in ("image", "chart")
+    client = _get_openai_client()
+    log.info(
+        "generator_node.calling_llm",
+        model=settings.llm_model,
+        chunks=len(chunks),
+        page_images=len(page_images),
     )
 
-    messages: list[dict] = [
-        {"role": "system", "content": GENERATOR_SYSTEM},
-        {
-            "role": "user",
-            "content": context_parts + [
-                {
-                    "type": "text",
-                    "text": (
-                        f"\nQuestion: {query}\n\n"
-                        "Provide a comprehensive answer with inline citations "
-                        "[Doc: filename.pdf, Page: N] for every factual claim."
-                    ),
-                }
-            ],
-        },
-    ]
-
-    # ------------------------------------------------------------------ #
-    # Call GPT-4o
-    # ------------------------------------------------------------------ #
     try:
-        llm = ChatOpenAI(
+        response = await client.chat.completions.create(
             model=settings.llm_model,
-            temperature=0,
-            openai_api_key=settings.openai_api_key,
+            messages=messages,
+            temperature=0.1,
+            max_tokens=2048,
         )
-        response = await llm.ainvoke(messages)
-        answer = response.content.strip()
+        answer = (response.choices[0].message.content or "").strip()
     except Exception as exc:
         raise GenerationError(
             "GPT-4o generation failed",
@@ -187,14 +312,33 @@ async def generator_node(state: AgentState) -> AgentState:
 
     citations = _extract_citations(answer, chunks)
 
+    # Combine embedded image chunks + rendered page images for API response
+    embedded_images = [
+        {
+            "filename": c.filename,
+            "page": c.page_number,
+            "caption": c.text if c.text != "[image content]" else "",
+            "image_b64": c.image_b64,
+        }
+        for c in chunks
+        if c.content_type in ("image", "chart") and c.image_b64
+    ]
+    all_images = embedded_images + page_images
+
+    retrieved_tables = _extract_tables_from_answer(answer)
+
     log.info(
-        "Generation complete",
+        "generator_node.done",
         answer_length=len(answer),
         citations=len(citations),
+        images=len(all_images),
+        tables=len(retrieved_tables),
     )
 
     return {
         **state,
         "generated_answer": answer,
         "citations": citations,
+        "retrieved_images": all_images,
+        "retrieved_tables": retrieved_tables,
     }

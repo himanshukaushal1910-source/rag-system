@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+"""
+Optimized qdrant_client.py:
+
+- Collection existence cached after first check — no repeated API calls
+- invalidate_collection_cache() for explicit cache busting after deletion
+- Singleton pattern with asyncio.Lock for thread safety
+"""
+
 import asyncio
 from typing import ClassVar
 
@@ -17,35 +25,19 @@ from config import get_settings
 
 logger: structlog.BoundLogger = structlog.get_logger(__name__)
 
-# Named vector keys — referenced in hybrid_retriever and ingestor.
 DENSE_VECTOR_NAME = "dense"
 SPARSE_VECTOR_NAME = "sparse"
 
 
 class QdrantClientSingleton:
-    """Async Qdrant client singleton with collection lifecycle management.
-
-    Usage::
-
-        client = await QdrantClientSingleton.get()
-        await client.upsert(...)
-
-    Call :meth:`close` during application shutdown (FastAPI lifespan).
-    """
+    """Async Qdrant client singleton with connection pooling."""
 
     _instance: ClassVar[AsyncQdrantClient | None] = None
     _lock: ClassVar[asyncio.Lock] = asyncio.Lock()
 
     @classmethod
     async def get(cls) -> AsyncQdrantClient:
-        """Return the shared :class:`AsyncQdrantClient`, creating it if needed.
-
-        Returns:
-            Initialised async Qdrant client.
-
-        Raises:
-            QdrantConnectionError: If the client cannot connect to Qdrant.
-        """
+        """Return shared AsyncQdrantClient, creating if needed."""
         async with cls._lock:
             if cls._instance is None:
                 cls._instance = await cls._create()
@@ -62,7 +54,6 @@ class QdrantClientSingleton:
                 api_key=settings.qdrant_api_key or None,
                 timeout=30,
             )
-            # Ping by listing collections.
             await client.get_collections()
             log.info("Qdrant client connected")
             return client
@@ -74,10 +65,7 @@ class QdrantClientSingleton:
 
     @classmethod
     async def close(cls) -> None:
-        """Close the underlying HTTP connection pool.
-
-        Call this from FastAPI lifespan shutdown.
-        """
+        """Close connection pool — call from FastAPI lifespan shutdown."""
         async with cls._lock:
             if cls._instance is not None:
                 await cls._instance.close()
@@ -85,30 +73,34 @@ class QdrantClientSingleton:
                 logger.info("Qdrant client closed")
 
 
-async def ensure_collection_exists() -> None:
-    """Create the Qdrant collection if it does not already exist.
+# Cache collection existence — avoid repeated get_collections() API calls
+# Safe because collections are never deleted during normal operation
+_collection_exists_cache: set[str] = set()
 
-    Collection schema:
-    - ``dense``: 3072-dim Cosine named vector (OpenAI text-embedding-3-large).
-    - ``sparse``: BM25 named sparse vector (fastembed).
 
-    Payload indices created on:
-    - ``doc_id`` (keyword) — for per-document filtering.
-    - ``page_number`` (integer) — for page-range filtering.
-    - ``content_type`` (keyword) — for modality filtering.
+async def ensure_collection_exists(collection_name: str | None = None) -> None:
+    """Create Qdrant collection if it doesn't exist.
 
-    Raises:
-        QdrantConnectionError: If the client cannot reach Qdrant.
+    Caches result after first successful check — subsequent calls
+    return instantly without hitting Qdrant API.
+
+    Args:
+        collection_name: Override collection name. Defaults to settings value.
     """
     settings = get_settings()
-    client = await QdrantClientSingleton.get()
-    collection = settings.qdrant_collection_name
+    collection = collection_name or settings.qdrant_collection_name
     log = logger.bind(collection=collection)
 
+    # Return instantly if already confirmed to exist
+    if collection in _collection_exists_cache:
+        return
+
+    client = await QdrantClientSingleton.get()
     existing = {c.name for c in (await client.get_collections()).collections}
 
     if collection in existing:
         log.info("Collection already exists — skipping creation")
+        _collection_exists_cache.add(collection)
         return
 
     log.info("Creating Qdrant collection")
@@ -127,26 +119,40 @@ async def ensure_collection_exists() -> None:
             },
         )
 
-        # --- Payload indices for fast metadata filtering ---
-        await client.create_payload_index(
-            collection_name=collection,
-            field_name="doc_id",
-            field_schema=PayloadSchemaType.KEYWORD,
-        )
-        await client.create_payload_index(
-            collection_name=collection,
-            field_name="page_number",
-            field_schema=PayloadSchemaType.INTEGER,
-        )
-        await client.create_payload_index(
-            collection_name=collection,
-            field_name="content_type",
-            field_schema=PayloadSchemaType.KEYWORD,
-        )
+        # Payload indices for fast metadata filtering
+        for field_name, schema in [
+            ("doc_id", PayloadSchemaType.KEYWORD),
+            ("content_type", PayloadSchemaType.KEYWORD),
+            ("page_number", PayloadSchemaType.INTEGER),
+        ]:
+            await client.create_payload_index(
+                collection_name=collection,
+                field_name=field_name,
+                field_schema=schema,
+            )
 
         log.info("Collection created with payload indices")
+        _collection_exists_cache.add(collection)
+
     except Exception as exc:
         raise QdrantConnectionError(
             f"Failed to create collection '{collection}'",
             detail=str(exc),
         ) from exc
+
+
+def invalidate_collection_cache(collection_name: str | None = None) -> None:
+    """Remove collection from existence cache.
+
+    Call after explicitly deleting a collection so next
+    ensure_collection_exists() re-checks Qdrant.
+
+    Args:
+        collection_name: Collection to invalidate. None clears all.
+    """
+    if collection_name is None:
+        _collection_exists_cache.clear()
+        logger.info("Collection cache cleared")
+    else:
+        _collection_exists_cache.discard(collection_name)
+        logger.info("Collection cache invalidated", collection=collection_name)

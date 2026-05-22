@@ -15,7 +15,13 @@ from config import get_settings
 
 logger: structlog.BoundLogger = structlog.get_logger(__name__)
 
-_PUBLIC_PATHS = {"/", "/health", "/metrics", "/docs", "/openapi.json", "/redoc", "/static"}
+# /metrics removed — protected by API key (C-4)
+# /api/login and /api/logout are public so the browser can authenticate
+_PUBLIC_PATHS = {
+    "/", "/health", "/docs", "/openapi.json", "/redoc",
+    "/static", "/api/files",
+    "/api/login", "/api/logout",
+}
 
 # In-memory rate limit store: api_key → deque of request timestamps
 _rate_limit_store: dict[str, deque] = defaultdict(deque)
@@ -39,31 +45,39 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: object) -> Response:
         path = request.url.path
-        if path in _PUBLIC_PATHS or path.startswith("/static"):
+        if path in _PUBLIC_PATHS or path.startswith("/static") or path.startswith("/api/files"):
             return await call_next(request)
 
         settings = get_settings()
         provided_key = request.headers.get("X-API-Key", "")
 
-        if not hmac.compare_digest(
+        # Try X-API-Key header first
+        if provided_key and hmac.compare_digest(
             hashlib.sha256(provided_key.encode()).digest(),
             hashlib.sha256(settings.api_key.encode()).digest(),
         ):
-            request_id = getattr(request.state, "request_id", None)
-            logger.warning("Unauthorized request", path=path, request_id=request_id)
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "error_code": "authentication_error",
-                    "message": "Invalid or missing X-API-Key header",
-                    "detail": "Provide a valid API key in the X-API-Key header",
-                    "request_id": request_id,
-                },
-            )
+            request.state.api_key = provided_key
+            return await call_next(request)
 
-        # Store the validated key on request state for rate limiter
-        request.state.api_key = provided_key
-        return await call_next(request)
+        # Fall back to HttpOnly session cookie (H-3)
+        session_token = request.cookies.get("rag_session", "")
+        if session_token:
+            from api.routes.auth import validate_session_token
+            if validate_session_token(session_token):
+                request.state.api_key = f"session:{session_token[:16]}"
+                return await call_next(request)
+
+        request_id = getattr(request.state, "request_id", None)
+        logger.warning("Unauthorized request", path=path, request_id=request_id)
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error_code": "authentication_error",
+                "message": "Authentication required",
+                "detail": "Provide a valid X-API-Key header or log in via /api/login",
+                "request_id": request_id,
+            },
+        )
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -84,7 +98,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        if path in _PUBLIC_PATHS or path.startswith("/static"):
+        if path in _PUBLIC_PATHS or path.startswith("/static") or path.startswith("/api/files"):
             return await call_next(request)
 
         # Use API key as the rate limit identity
@@ -100,6 +114,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             timestamps.popleft()
 
         if len(timestamps) >= limit:
+            from api.routes.metrics import record_rate_limited
+            record_rate_limited()
             retry_after = int(window - (now - timestamps[0])) + 1
             request_id = getattr(request.state, "request_id", None)
             logger.warning(
