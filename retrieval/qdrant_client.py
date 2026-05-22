@@ -53,9 +53,15 @@ class QdrantClientSingleton:
                 url=settings.qdrant_url,
                 api_key=settings.qdrant_api_key or None,
                 timeout=30,
+                prefer_grpc=settings.use_grpc,
+                grpc_port=settings.qdrant_grpc_port,
             )
             await client.get_collections()
-            log.info("Qdrant client connected")
+            log.info(
+                "Qdrant client connected",
+                grpc=settings.use_grpc,
+                grpc_port=settings.qdrant_grpc_port,
+            )
             return client
         except Exception as exc:
             raise QdrantConnectionError(
@@ -122,6 +128,7 @@ async def ensure_collection_exists(collection_name: str | None = None) -> None:
         # Payload indices for fast metadata filtering
         for field_name, schema in [
             ("doc_id", PayloadSchemaType.KEYWORD),
+            ("filename", PayloadSchemaType.KEYWORD),
             ("content_type", PayloadSchemaType.KEYWORD),
             ("page_number", PayloadSchemaType.INTEGER),
         ]:

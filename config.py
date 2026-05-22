@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     qdrant_url: str = Field(default="http://localhost:6333", description="Qdrant REST URL.")
     qdrant_collection_name: str = Field(default="pdf_rag", description="Qdrant collection name.")
     qdrant_api_key: str = Field(default="", description="Qdrant API key (empty = no auth).")
-    use_grpc: bool = Field(default=False, description="Use gRPC instead of REST for Qdrant.")
+    use_grpc: bool = Field(default=True, description="Use gRPC instead of REST for Qdrant (2-3x faster).")
     qdrant_grpc_port: int = Field(default=6334, description="Qdrant gRPC port.")
 
     # ── FastAPI ───────────────────────────────────────────────────────────────
@@ -211,7 +211,7 @@ class Settings(BaseSettings):
 
     # ── Contextual Compression ────────────────────────────────────────────────
     contextual_compression_enabled: bool = Field(
-        default=False,
+        default=True,
         description="Use gpt-4o-mini to extract only query-relevant sentences from each chunk. "
                     "Adds ~0.3-0.5s per query but reduces context noise.",
     )
